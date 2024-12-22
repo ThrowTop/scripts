@@ -264,7 +264,8 @@ function Install-DefaultPrograms {
         "Brave.Brave",
         "Valve.Steam",
         "Flow-Launcher.Flow-Launcher",
-        "PrivateInternetAccess.PrivateInternetAccess"
+        "PrivateInternetAccess.PrivateInternetAccess",
+        "AutoHotkey.AutoHotkey"
     )
 
     $SelectedPrograms = Show-CheckboxMenu -Items $Programs -Prompt "Select programs to install" -DefaultSelected $true
