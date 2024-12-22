@@ -31,9 +31,9 @@ function Show-CheckboxMenu {
         Write-Host "$Prompt (Use Arrow keys and Space to select, Enter to confirm, Escape to cancel)" -ForegroundColor Cyan
         for ($i = 0; $i -lt $Items.Count; $i++) {
             if ($CurrentIndex -eq $i) {
-                Write-Host "> [$(if ($Selected[$i]) {"X"} else {" "})] $($Items[$i])" -ForegroundColor Yellow
+                Write-Host "> [$(if ($Selected[$i]) {"X"} else {" "})] $($Items[$i].Name)" -ForegroundColor Yellow
             } else {
-                Write-Host "  [$(if ($Selected[$i]) {"X"} else {" "})] $($Items[$i])"
+                Write-Host "  [$(if ($Selected[$i]) {"X"} else {" "})] $($Items[$i].Name)"
             }
         }
 
@@ -253,18 +253,21 @@ function Zip-BackupFolder {
 function Install-DefaultPrograms {
     Write-Host "Installing default programs using winget..." -ForegroundColor Yellow
 
+
+    # Yes im aware this is super fucking stupid but i cba remaking menu function
     $Programs = @(
-        "Git.Git",
-        "winaero.tweaker",
-        "Microsoft.PowerToys",
-        "ajeetdsouza.zoxide",
-        "ShareX.ShareX",
-        "Brave.Brave",
-        "Valve.Steam",
-        "Flow-Launcher.Flow-Launcher",
-        "PrivateInternetAccess.PrivateInternetAccess",
-        "AutoHotkey.AutoHotkey"
+        @{ Name = "Git.Git" },
+        @{ Name = "winaero.tweaker" },
+        @{ Name = "Microsoft.PowerToys" },
+        @{ Name = "ajeetdsouza.zoxide" },
+        @{ Name = "ShareX.ShareX" },
+        @{ Name = "Brave.Brave" },
+        @{ Name = "Valve.Steam" },
+        @{ Name = "Flow-Launcher.Flow-Launcher" },
+        @{ Name = "PrivateInternetAccess.PrivateInternetAccess" },
+        @{ Name = "AutoHotkey.AutoHotkey" }
     )
+
 
     $SelectedPrograms = Show-CheckboxMenu -Items $Programs -Prompt "Select programs to install" -DefaultSelected $true
     if ($null -eq $SelectedPrograms) {
@@ -277,9 +280,11 @@ function Install-DefaultPrograms {
     }
 
     foreach ($Program in $SelectedPrograms) {
-        Write-Host "Installing $Program..."
-        winget install --id $Program -e --silent
+        $ProgramName = $Program.Name  # Access the 'Name' property
+        Write-Host "Installing $ProgramName..."
+        winget install --id $ProgramName -e --silent
     }
+
 
     Write-Host "Program installation complete." -ForegroundColor Cyan
 }
