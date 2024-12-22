@@ -10,6 +10,10 @@ $BackupItems = @(
         Filter = @{ Type =  "Whitelist"; Paths = @("cfg", "sar.dll")} },
     @{ Name = "CS:2 Config"; Source = "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\cfg"; Target = "C:\Backup\CS2" 
         Filter = @{ Type =  "Whitelist"; Paths = @("multi", "usercfg", "ae.cfg", "autoexec.cfg", "ez.cfg")} },
+
+    @{ Name = "Gamesense Config"; Source = "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\cfg"; Target = "C:\Backup\Gamesense" 
+        Filter = @{ Type = "Regex"; Paths = @("^\d+\.cfg$") } },
+
     @{ Name = "PowerShell Profile"; Source = "$PROFILE"; Target = "C:\Backup\PowerShellProfile" }
 )
 
@@ -82,9 +86,18 @@ function Filter-Files {
                 } -contains $_.FullName.Substring($Source.Length).TrimStart("\").ToLower())
             }
         }
-        default { return Get-ChildItem -Path $Source -Recurse }
+        "Regex" {
+            $regex = $Filter.Paths[0] # Assuming you pass regex as a single pattern
+            return Get-ChildItem -Path $Source -Recurse | Where-Object {
+                $_.Name -match $regex
+            }
+        }
+        default {
+            return Get-ChildItem -Path $Source -Recurse
+        }
     }
 }
+
 
 # Create the main menu
 function Show-Menu {
