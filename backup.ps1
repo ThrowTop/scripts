@@ -53,7 +53,6 @@ function Show-CheckboxMenu {
 
 
 # Function to apply whitelist or blacklist filters
-# Modified Filter-Files function
 function Filter-Files {
     param (
         [string] $Source,
@@ -67,10 +66,8 @@ function Filter-Files {
                 $fullPath = Join-Path -Path $Source -ChildPath $path
                 if (Test-Path $fullPath) {
                     if ((Get-Item $fullPath) -is [System.IO.DirectoryInfo]) {
-                        # If it's a directory, get all files recursively
                         $results += Get-ChildItem -Path $fullPath -Recurse
                     } else {
-                        # If it's a file, get just that file
                         $results += Get-Item -Path $fullPath
                     }
                 }
