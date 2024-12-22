@@ -52,6 +52,7 @@ function Show-CheckboxMenu {
 }
 
 
+
 # Function to apply whitelist or blacklist filters
 function Filter-Files {
     param (
