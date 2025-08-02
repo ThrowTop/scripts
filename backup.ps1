@@ -10,38 +10,45 @@ enum Filter {
 }
 
 $BackupItems = @{
-    custom = @{ 
+    custom  = @{ 
         Name   = "Custom Programs"
         Source = "C:\custom"
         Filter = @{ 
-            Type = [Filter]::Blacklist
+            Type  = [Filter]::Blacklist
             Paths = @() 
         } 
     }
-    ShareX = @{ 
-        Name = "ShareX Settings"
+    ShareX  = @{ 
+        Name   = "ShareX Settings"
         Source = "C:\Users\$env:USERNAME\Documents\ShareX"
         Filter = @{ 
-            Type = [Filter]::Whitelist
+            Type  = [Filter]::Whitelist
             Paths = @("ApplicationConfig.json", "HotkeysConfig.json") 
         } 
     }
     Portal2 = @{ 
-        Name = "Portal 2 Config + Sar"; 
+        Name   = "Portal 2 Config + Sar"; 
         Source = "C:\Program Files (x86)\Steam\steamapps\common\Portal 2\portal2"
         Filter = @{ 
-            Type = [Filter]::Whitelist
+            Type  = [Filter]::Whitelist
             Paths = @("cfg", "sar.dll") 
         } 
     }
-    CS2 = @{ 
-        Name = "CS:2 Config"
+    CS2     = @{ 
+        Name   = "CS:2 Config"
         Source = "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\cfg"
         Filter = @{ 
-            Type = [Filter]::Whitelist
+            Type  = [Filter]::Whitelist
             Paths = @("usercfg", "ae.cfg", "autoexec.cfg", "ez.cfg") 
         } 
     }
+}
+
+
+$packages = @{
+    main          = @("Discord.Discord", "ShareX.ShareX", "Brave.Brave", "Valve.Steam", "Bitwarden.Bitwarden", "SublimeHQ.SublimeText.4", "Flow-Launcher.Flow-Launcher", "AutoHotkey.AutoHotkey")
+    recording     = @("OBSProject.OBSStudio")
+    customization = @("winaero.tweaker", "Vendicated.Vencord", "JanDeDobbeleer.OhMyPosh", "Microsoft.PowerToys")
 }
 
 function Show-MultiSelectMenu {
@@ -187,9 +194,21 @@ function Restore-FilteredContent {
     }
 }
 
+function Install-Packages {
+    param (
+        [string[]]$Ids
+    )
+    foreach ($id in $Ids) {
+        Write-Host "Installing: $id" -ForegroundColor Cyan
+        Start-Process "winget" -ArgumentList @("install", "--id", $id, "--accept-source-agreements", "--accept-package-agreements", "-e") -Wait -NoNewWindow
+    }
+}
+
+
 # Main Menu Loop
 while ($true) {
-    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Exit") -Prompt "======= Backup Manager ======="
+    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Apps", "Exit") -Prompt "======= Backup Manager ======="
+
     switch ($action) {
         "Backup" {
             $targets = Show-MultiSelectMenu -Items $BackupItems.Keys -Prompt "Select items to backup"
@@ -209,21 +228,31 @@ while ($true) {
                 Copy-FilteredContent -Source $item.Source -Destination $dest -Filter $item.Filter
                 Write-Host "Backed up: $key -> $dest"
             }
-            pause
+            Pause
         }
         "Restore" {
             $existingBackups = Get-ChildItem -Path "C:\backup" -Directory | Where-Object { $BackupItems.ContainsKey($_.Name) } | Select-Object -ExpandProperty Name
             if (-not $existingBackups) {
                 Write-Host "No backups found in C:\backup" -ForegroundColor Red
-                pause
+                Pause
                 continue
             }
             $key = Show-SingleSelectMenu -Items $existingBackups -Prompt "Select item to restore"
 
             Restore-FilteredContent -Key $key -Item $BackupItems[$key]
             Write-Host "Restored: $key"
-            pause
+            Pause
         }
+        "Install Apps" {
+            $selectedGroups = Show-MultiSelectMenu -Items $Packages.Keys -Prompt "Select package groups to install"
+            $toInstall = @()
+            foreach ($group in $selectedGroups) {
+                $toInstall += $Packages[$group]
+            }
+            Install-Packages -Ids $toInstall
+            Pause
+        }
+
         "Exit" {
             break
         }
