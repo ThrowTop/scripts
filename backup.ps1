@@ -79,9 +79,10 @@ function Show-YesNoPrompt {
     while (-not $done) {
         $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").VirtualKeyCode
         switch ($Key) {
-            89 { $done = $true; return $true }
-            78 { $done = $true; return $false }
-            13 { $done = $true; return $Default }
+            89 { $done = $true; return $true }   # Y
+            78 { $done = $true; return $false }  # N
+            13 { $done = $true; return $Default }# Enter
+            27 { $done = $true; return $false }  # Escape
         }
     }
 }
@@ -120,6 +121,124 @@ function Show-MultiSelectMenu {
     }
 
     return $Items | Where-Object { $Selected[$Items.IndexOf($_)] }
+}
+
+function Show-MultiSelectHierarchicalMenu {
+    param (
+        [hashtable]$Items,
+        [string]$Prompt = "Select items to install"
+    )
+
+    $groupKeys = $Items.Keys
+    $groupStates = @{}
+    $itemStates = @{}
+    $expanded = @{}
+    $flatView = @()
+
+    foreach ($group in $groupKeys) {
+        $groupStates[$group] = $false
+        $expanded[$group] = $false
+        foreach ($pkg in $Items[$group]) {
+            $itemStates["$group|$pkg"] = $false
+        }
+    }
+
+    $selectedIndex = 0
+
+    function Render {
+        Clear-Host
+        Write-Host "$Prompt" -ForegroundColor Cyan
+        $flatView = @()
+        foreach ($group in $groupKeys) {
+            $gState = if ($groupStates[$group]) { "X" } else { " " }
+            $prefix = if ($expanded[$group]) { "↴" } else { " " }
+            $flatView += [pscustomobject]@{
+                Type  = "group"; 
+                Group = $group; 
+                Text  = "[$gState] $group $prefix"
+            }
+            if ($expanded[$group]) {
+                foreach ($pkg in $Items[$group]) {
+                    $pState = if ($itemStates["$group|$pkg"]) { "X" } else { " " }
+                    $flatView += [pscustomobject]@{
+                        Type = "item"; Group = $group; Id = $pkg; Text = "  [$pState] $pkg"
+                    }
+                }
+            }
+        }
+
+        for ($i = 0; $i -lt $flatView.Count; $i++) {
+            if ($i -eq $selectedIndex) {
+                Write-Host "> $($flatView[$i].Text)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  $($flatView[$i].Text)"
+            }
+        }
+        return $flatView
+    }
+
+
+    $done = $false
+    while (-not $done) {
+        $flatView = Render
+        $line = $flatView[$selectedIndex]
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").VirtualKeyCode
+
+        switch ($key) {
+            38 { $selectedIndex = ($selectedIndex - 1 + $flatView.Count) % $flatView.Count }
+            40 { $selectedIndex = ($selectedIndex + 1) % $flatView.Count }
+            37 {
+                if ($line.Type -eq "group") {
+                    $expanded[$line.Group] = $false
+                } elseif ($line.Type -eq "item") {
+                    $expanded[$line.Group] = $false
+                    for ($i = 0; $i -lt $flatView.Count; $i++) {
+                        if ($flatView[$i].Type -eq "group" -and $flatView[$i].Group -eq $line.Group) {
+                            $selectedIndex = $i
+                            break
+                        }
+                    }
+                }
+            }
+            39 { if ($line.Type -eq "group") { $expanded[$line.Group] = $true } }
+            32 {
+                if ($line.Type -eq "group") {
+                    $groupStates[$line.Group] = -not $groupStates[$line.Group]
+                    foreach ($pkg in $Items[$line.Group]) {
+                        $itemStates["$($line.Group)|$pkg"] = $groupStates[$line.Group]
+                    }
+                } elseif ($line.Type -eq "item") {
+                    $key = "$($line.Group)|$($line.Id)"
+                    $itemStates[$key] = -not $itemStates[$key]
+                    $allSelected = $true
+                    foreach ($pkg in $Items[$line.Group]) {
+                        if (-not $itemStates["$($line.Group)|$pkg"]) {
+                            $allSelected = $false
+                            break
+                        }
+                    }
+                    $groupStates[$line.Group] = $allSelected
+                }
+            }
+            13 { $done = $true }
+        }
+    }
+
+
+    $result = @{}
+    foreach ($group in $groupKeys) {
+        $selectedPkgs = @()
+        foreach ($pkg in $Items[$group]) {
+            if ($itemStates["$group|$pkg"]) {
+                $selectedPkgs += $pkg
+            }
+        }
+        if ($selectedPkgs.Count -gt 0) {
+            $result[$group] = $selectedPkgs
+        }
+    }
+
+    return $result
 }
 
 function Show-SingleSelectMenu {
@@ -241,10 +360,9 @@ function Install-Packages {
     }
 }
 
-
 # Main Menu Loop
 while ($true) {
-    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Packages", "List Packages", "Fix Winget", "Exit") -Prompt "======= Backup Manager ======="
+    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Packages", "Exit") -Prompt "======= Backup Manager ======="
 
     switch ($action) {
         "Backup" {
@@ -283,13 +401,7 @@ while ($true) {
         }
         "Install Packages" {
 
-
-            $selectedGroups = Show-MultiSelectMenu -Items $Packages.Keys -Prompt "Select package groups to install"
-
-            $toInstall = @{}
-            foreach ($group in $selectedGroups) {
-                $toInstall[$group] = $Packages[$group]
-            }
+            $toInstall = Show-MultiSelectHierarchicalMenu -Items $Packages -Prompt "Select package groups to install"
 
             if ($toInstall.Count -eq 0) {
                 Write-Host "No packages selected." -ForegroundColor Red
@@ -307,13 +419,13 @@ while ($true) {
                 $capitalized = ($group.Substring(0, 1).ToUpper()) + $group.Substring(1)
                 Write-Host "${capitalized}:" -ForegroundColor Yellow
                 foreach ($pkg in $toInstall[$group]) {
-                    Write-Host $pkg -ForegroundColor Gray
+                    Write-Host "$pkg" -ForegroundColor Gray
                 }
                 Write-Host ""
             }
 
-
-            $confirmed = Show-YesNoPrompt
+            Write-Host "Confirm (Y/n) (Enter/Esc)..."
+            $confirmed = Show-YesNoPrompt  # Replace with Show-YesNoPrompt when available
             if ($confirmed) {
                 $flatList = @()
                 foreach ($groupList in $toInstall.Values) {
@@ -326,52 +438,9 @@ while ($true) {
 
             Pause
         }
-        "List Packages" {
-            Clear-Host
-            Write-Host "Available packages by category:`n" -ForegroundColor Cyan
-
-            foreach ($group in $Packages.Keys) {
-                $capitalized = ($group.Substring(0, 1).ToUpper()) + $group.Substring(1)
-                Write-Host "${capitalized}:" -ForegroundColor Yellow
-                foreach ($pkg in $Packages[$group]) {
-                    Write-Host $pkg -ForegroundColor Gray
-                }
-                Write-Host ""
-            }
-
-            Pause
-        }
-        "Fix Winget" {
-            Install-WinUtilChoco
-            Start-Process -FilePath "choco" -ArgumentList "install winget -y --force" -NoNewWindow -Wait
-        }
         "Exit" {
             break
         }
     }
 }
 
-function Install-WinUtilChoco {
-
-    <#
-
-    .SYNOPSIS
-        Installs Chocolatey if it is not already installed
-
-    #>
-
-    try {
-
-        # Install logic taken from https://chocolatey.org/install#individual
-        Write-Host "Seems Chocolatey is not installed, installing now."
-        Set-ExecutionPolicy Bypass -Scope Process -Force;
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-    } catch {
-        Write-Host "===========================================" -ForegroundColor Red
-        Write-Host "--     Chocolatey failed to install     ---" -ForegroundColor Red
-        Write-Host "===========================================" -ForegroundColor Red
-    }
-
-}
