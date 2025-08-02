@@ -42,14 +42,50 @@ $BackupItems = @{
             Paths = @("usercfg", "ae.cfg", "autoexec.cfg", "ez.cfg") 
         } 
     }
+    OBS     = @{ 
+        Name   = "OBS Studio Settings"
+        Source = "$env:APPDATA\obs-studio"
+        Filter = @{ 
+            Type  = [Filter]::Whitelist
+            Paths = @("basic", "global.ini", "service.json", "plugin_config") 
+        } 
+    }
+    WinRar  = @{
+        Name   = "Winrar Activation"
+        Source = "C:\Program Files\WinRAR"
+        Filter = @{ 
+            Type  = [Filter]::Whitelist
+            Paths = @("rarreg.key") 
+        } 
+    }
 }
 
 
-$packages = @{
-    main          = @("Discord.Discord", "ShareX.ShareX", "Brave.Brave", "Valve.Steam", "Bitwarden.Bitwarden", "SublimeHQ.SublimeText.4", "Flow-Launcher.Flow-Launcher", "AutoHotkey.AutoHotkey")
-    recording     = @("OBSProject.OBSStudio")
-    customization = @("winaero.tweaker", "Vendicated.Vencord", "JanDeDobbeleer.OhMyPosh", "Microsoft.PowerToys")
+$packages = [ordered]@{
+    main          = @("Discord.Discord", "RARLab.WinRAR", "ShareX.ShareX", "Brave.Brave", "Valve.Steam", "Bitwarden.Bitwarden", "SublimeHQ.SublimeText.4", "Flow-Launcher.Flow-Launcher", "AutoHotkey.AutoHotkey", "Gyan.FFmpeg")
+    code          = @("Microsoft.VisualStudio.2022.Community.Preview", "Git.Git", "ajeetdsouza.zoxide", "Microsoft.VisualStudioCode", "DEVCOM.Lua", "Python.Python.3.13", "yt-dlp.yt-dlp", "Microsoft.PowerShell")
+    customization = @("winaero.tweaker", "Vendicated.Vencord", "JanDeDobbeleer.OhMyPosh", "Microsoft.PowerToys", "LianLi.LConnect3", "OpenRGB.OpenRGB")
+    streaming     = @("PrivateInternetAccess.PrivateInternetAccess", "Stremio.Stremio")
+    recording     = @("OBSProject.OBSStudio", "univrsal.input-overlay")
+    faceit        = @("FACEITLTD.FACEITClient", "FACEITLTD.FACEITAC")
 }
+
+function Show-YesNoPrompt { 
+    param (
+        [bool]$Default = $true
+    )
+
+    $done = $false
+    while (-not $done) {
+        $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").VirtualKeyCode
+        switch ($Key) {
+            89 { $done = $true; return $true }
+            78 { $done = $true; return $false }
+            13 { $done = $true; return $Default }
+        }
+    }
+}
+
 
 function Show-MultiSelectMenu {
     param (
@@ -198,6 +234,7 @@ function Install-Packages {
     param (
         [string[]]$Ids
     )
+
     foreach ($id in $Ids) {
         Write-Host "Installing: $id" -ForegroundColor Cyan
         Start-Process "winget" -ArgumentList @("install", "--id", $id, "--accept-source-agreements", "--accept-package-agreements", "-e") -Wait -NoNewWindow
@@ -207,7 +244,7 @@ function Install-Packages {
 
 # Main Menu Loop
 while ($true) {
-    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Apps", "Exit") -Prompt "======= Backup Manager ======="
+    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Packages", "List Packages", "Fix Winget", "Exit") -Prompt "======= Backup Manager ======="
 
     switch ($action) {
         "Backup" {
@@ -223,38 +260,118 @@ while ($true) {
                 } else {
                     Write-Warning "Invalid destination path: $dest"
                 }
-
-                New-Item -ItemType Directory -Path $dest -Force | Out-Null
-                Copy-FilteredContent -Source $item.Source -Destination $dest -Filter $item.Filter
-                Write-Host "Backed up: $key -> $dest"
             }
             Pause
         }
         "Restore" {
-            $existingBackups = Get-ChildItem -Path "C:\backup" -Directory | Where-Object { $BackupItems.ContainsKey($_.Name) } | Select-Object -ExpandProperty Name
+            $existingBackups = Get-ChildItem -Path "C:\backup" -Directory |
+            Where-Object { $BackupItems.ContainsKey($_.Name) } |
+            Select-Object -ExpandProperty Name
+
             if (-not $existingBackups) {
                 Write-Host "No backups found in C:\backup" -ForegroundColor Red
                 Pause
                 continue
             }
-            $key = Show-SingleSelectMenu -Items $existingBackups -Prompt "Select item to restore"
 
-            Restore-FilteredContent -Key $key -Item $BackupItems[$key]
-            Write-Host "Restored: $key"
-            Pause
-        }
-        "Install Apps" {
-            $selectedGroups = Show-MultiSelectMenu -Items $Packages.Keys -Prompt "Select package groups to install"
-            $toInstall = @()
-            foreach ($group in $selectedGroups) {
-                $toInstall += $Packages[$group]
+            $keys = Show-MultiSelectMenu -Items $existingBackups -Prompt "Select items to restore"
+            foreach ($key in $keys) {
+                Restore-FilteredContent -Key $key -Item $BackupItems[$key]
+                Write-Host "Restored: $key"
             }
-            Install-Packages -Ids $toInstall
             Pause
         }
+        "Install Packages" {
 
+
+            $selectedGroups = Show-MultiSelectMenu -Items $Packages.Keys -Prompt "Select package groups to install"
+
+            $toInstall = @{}
+            foreach ($group in $selectedGroups) {
+                $toInstall[$group] = $Packages[$group]
+            }
+
+            if ($toInstall.Count -eq 0) {
+                Write-Host "No packages selected." -ForegroundColor Red
+                Pause
+                continue
+            }
+
+            Clear-Host
+            Write-Host "Install the following packages? (Y/n)" -ForegroundColor Cyan
+            Write-Host ""
+
+            foreach ($group in $Packages.Keys) {
+                if (-not $toInstall.ContainsKey($group)) { continue }
+
+                $capitalized = ($group.Substring(0, 1).ToUpper()) + $group.Substring(1)
+                Write-Host "${capitalized}:" -ForegroundColor Yellow
+                foreach ($pkg in $toInstall[$group]) {
+                    Write-Host $pkg -ForegroundColor Gray
+                }
+                Write-Host ""
+            }
+
+
+            $confirmed = Show-YesNoPrompt
+            if ($confirmed) {
+                $flatList = @()
+                foreach ($groupList in $toInstall.Values) {
+                    $flatList += $groupList
+                }
+                Install-Packages -Ids $flatList
+            } else {
+                Write-Host "Installation cancelled."
+            }
+
+            Pause
+        }
+        "List Packages" {
+            Clear-Host
+            Write-Host "Available packages by category:`n" -ForegroundColor Cyan
+
+            foreach ($group in $Packages.Keys) {
+                $capitalized = ($group.Substring(0, 1).ToUpper()) + $group.Substring(1)
+                Write-Host "${capitalized}:" -ForegroundColor Yellow
+                foreach ($pkg in $Packages[$group]) {
+                    Write-Host $pkg -ForegroundColor Gray
+                }
+                Write-Host ""
+            }
+
+            Pause
+        }
+        "Fix Winget" {
+            Install-WinUtilChoco
+            Start-Process -FilePath "choco" -ArgumentList "install winget -y --force" -NoNewWindow -Wait
+        }
         "Exit" {
             break
         }
     }
+}
+
+function Install-WinUtilChoco {
+
+    <#
+
+    .SYNOPSIS
+        Installs Chocolatey if it is not already installed
+
+    #>
+
+    try {
+
+        # Install logic taken from https://chocolatey.org/install#individual
+        Write-Host "Seems Chocolatey is not installed, installing now."
+        Set-ExecutionPolicy Bypass -Scope Process -Force;
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+    } catch {
+        Write-Host "===========================================" -ForegroundColor Red
+        Write-Host "--     Chocolatey failed to install     ---" -ForegroundColor Red
+        Write-Host "===========================================" -ForegroundColor Red
+    }
+
 }
