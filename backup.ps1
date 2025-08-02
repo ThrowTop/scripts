@@ -10,7 +10,7 @@ enum Filter {
 }
 
 $BackupItems = @{
-    custom  = @{ 
+    custom       = @{ 
         Name   = "Custom Programs"
         Source = "C:\custom"
         Filter = @{ 
@@ -18,7 +18,7 @@ $BackupItems = @{
             Paths = @() 
         } 
     }
-    ShareX  = @{ 
+    ShareX       = @{ 
         Name   = "ShareX Settings"
         Source = "C:\Users\$env:USERNAME\Documents\ShareX"
         Filter = @{ 
@@ -26,7 +26,15 @@ $BackupItems = @{
             Paths = @("ApplicationConfig.json", "HotkeysConfig.json") 
         } 
     }
-    Portal2 = @{ 
+    FlowLauncher = @{ 
+        Name   = "FlowLauncher Settings"
+        Source = "C:\Users\$env:USERNAME\AppData\Roaming\FlowLauncher"
+        Filter = @{ 
+            Type  = [Filter]::Whitelist
+            Paths = @("Settings", "Plugins", "Environments") 
+        } 
+    }
+    Portal2      = @{ 
         Name   = "Portal 2 Config + Sar"; 
         Source = "C:\Program Files (x86)\Steam\steamapps\common\Portal 2\portal2"
         Filter = @{ 
@@ -34,7 +42,7 @@ $BackupItems = @{
             Paths = @("cfg", "sar.dll") 
         } 
     }
-    CS2     = @{ 
+    CS2          = @{ 
         Name   = "CS:2 Config"
         Source = "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\cfg"
         Filter = @{ 
@@ -42,20 +50,28 @@ $BackupItems = @{
             Paths = @("usercfg", "ae.cfg", "autoexec.cfg", "ez.cfg") 
         } 
     }
-    OBS     = @{ 
+    OBS          = @{ 
         Name   = "OBS Studio Settings"
         Source = "$env:APPDATA\obs-studio"
         Filter = @{ 
             Type  = [Filter]::Whitelist
-            Paths = @("basic", "global.ini", "service.json", "plugin_config") 
+            Paths = @("basic", "global.ini", "service.json") 
         } 
     }
-    WinRar  = @{
+    WinRar       = @{
         Name   = "Winrar Activation"
         Source = "C:\Program Files\WinRAR"
         Filter = @{ 
             Type  = [Filter]::Whitelist
             Paths = @("rarreg.key") 
+        } 
+    }
+    PowerShell   = @{ 
+        Name   = "PowerShell Profile (Custom Link)"
+        Source = "C:\Users\$env:USERNAME\Documents\Powershell"
+        Filter = @{ 
+            Type  = [Filter]::Whitelist
+            Paths = @("Microsoft.PowerShell_profile.ps1") 
         } 
     }
 }
@@ -327,6 +343,34 @@ function Copy-FilteredContent {
     }
 }
 
+function Zip-BackupFolder {
+    param (
+        [string]$BackupPath = "C:\backup",
+        [string]$ZipPath = "C:\backup.zip"
+    )
+
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+    if (Test-Path $BackupPath) {
+        Compress-Archive -Path "$BackupPath\*" -DestinationPath $ZipPath -Force
+        Write-Host "Backup zipped to $ZipPath" -ForegroundColor Green
+    } else {
+        Write-Warning "Backup folder not found: $BackupPath"
+    }
+}
+
+function Unzip-BackupIfNeeded {
+    param (
+        [string]$BackupPath = "C:\backup",
+        [string]$ZipPath = "C:\backup.zip"
+    )
+
+    if (-not (Test-Path $BackupPath) -and (Test-Path $ZipPath)) {
+        Expand-Archive -Path $ZipPath -DestinationPath $BackupPath -Force
+        Write-Host "Unzipped backup from $ZipPath" -ForegroundColor Green
+    }
+}
+
+
 function Restore-FilteredContent {
     param (
         [string]$Key,
@@ -362,7 +406,8 @@ function Install-Packages {
 
 # Main Menu Loop
 while ($true) {
-    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Install Packages", "Exit") -Prompt "======= Backup Manager ======="
+    $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Zip Backup Folder", "Install Packages", "Exit") -Prompt "======= Backup Manager ======="
+
 
     switch ($action) {
         "Backup" {
@@ -371,18 +416,53 @@ while ($true) {
                 $item = $BackupItems[$key]
                 $dest = "C:\backup\$key"
                 if ($dest.StartsWith("C:\backup\", [System.StringComparison]::InvariantCultureIgnoreCase)) {
-                    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+                    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue }
                     New-Item -ItemType Directory -Path $dest -Force | Out-Null
-                    Copy-FilteredContent -Source $item.Source -Destination $dest -Filter $item.Filter
-                    Write-Host "Backed up: $key -> $dest"
+                    try {
+                        $filterType = $item.Filter.Type
+                        $paths = $item.Filter.Paths
+                        $files = Get-ChildItem -Path $item.Source -Recurse -Force -File -ErrorAction SilentlyContinue
+                        foreach ($file in $files) {
+                            $relPath = $file.FullName.Substring($item.Source.Length).TrimStart("\")
+                            $include = switch ($filterType) {
+                                "Whitelist" { $paths -contains $relPath.Split('\')[0] -or $paths -contains $relPath }
+                                "Blacklist" { -not ($paths -contains $relPath.Split('\')[0] -or $paths -contains $relPath) }
+                                "Regex" { $paths | Where-Object { $relPath -match $_ } }
+                            }
+                            if ($include) {
+                                $destPath = Join-Path $dest $relPath
+                                New-Item -ItemType Directory -Path (Split-Path $destPath) -Force | Out-Null
+                                try {
+                                    Copy-Item -Path $file.FullName -Destination $destPath -Force -ErrorAction Stop
+                                } catch {
+                                    try {
+                                        $stream = [System.IO.File]::Open($file.FullName, 'Open', 'Read', 'ReadWrite')
+                                        $fs = New-Object System.IO.FileStream($destPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+                                        $stream.CopyTo($fs)
+                                        $fs.Close()
+                                        $stream.Close()
+                                    } catch {
+                                        Write-Warning "Skipped locked file: $($file.FullName)"
+                                    }
+                                }
+                            }
+                        }
+                        Write-Host "Backed up: $key -> $dest"
+                    } catch {
+                        Write-Warning "Failed to backup $key : $_"
+                    }
                 } else {
                     Write-Warning "Invalid destination path: $dest"
                 }
             }
             Pause
         }
+
         "Restore" {
+            Unzip-BackupIfNeeded
+
             $existingBackups = Get-ChildItem -Path "C:\backup" -Directory |
+
             Where-Object { $BackupItems.ContainsKey($_.Name) } |
             Select-Object -ExpandProperty Name
 
@@ -438,6 +518,11 @@ while ($true) {
 
             Pause
         }
+        "Zip Backup Folder" {
+            Zip-BackupFolder
+            Pause
+        }
+
         "Exit" {
             break
         }
