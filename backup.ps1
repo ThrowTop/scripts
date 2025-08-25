@@ -74,6 +74,14 @@ $BackupItems = @{
             Paths = @("Microsoft.PowerShell_profile.ps1") 
         } 
     }
+    Mpv   = @{ 
+        Name   = "MPV Profile"
+        Source = "C:\Users\$env:USERNAME\AppData\Roaming\mpv"
+        Filter = @{ 
+            Type  = [Filter]::Blacklist
+            Paths = @() 
+        } 
+    }
 }
 
 
