@@ -412,8 +412,9 @@ function Install-Packages {
     }
 }
 
-# Main Menu Loop
-while ($true) {
+$continueLoop = $true
+
+while ($continueLoop) {
     $action = Show-SingleSelectMenu -Items @("Backup", "Restore", "Zip Backup Folder", "Install Packages", "Exit") -Prompt "======= Backup Manager ======="
 
 
@@ -532,6 +533,7 @@ while ($true) {
         }
 
         "Exit" {
+            $continueLoop = $false
             break
         }
     }
